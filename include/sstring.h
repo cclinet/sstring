@@ -2,11 +2,9 @@
 #define SSTRING_SSTRING_H
 
 #include <array>
-
 #include <bit>
-
 #include <iostream>
-
+#include <memory>
 #include <ostream>
 
 
@@ -41,6 +39,19 @@ namespace ss {
                 init_medium(data, size);
             } else {
                 init_large(data, size);
+            }
+        }
+        ~String() {
+            Category cat = category();
+            switch (cat) {
+                case Category::SMALL:
+                    break;
+                case Category::MEDIUM:
+                    destroy_medium();
+                    break;
+                case Category::LARGE:
+                    destroy_large();
+                    break;
             }
         }
         friend std::ostream &operator<<(std::ostream &os, const String &s) {
@@ -112,6 +123,8 @@ namespace ss {
 
     private:
         static constexpr size_t last_byte_pos = IS_LITTLE_ENDIAN ? sizeof(bytes_) - sizeof(size_t) : sizeof(bytes_) - 1;
+        Allocator alloc;
+
         void init_small(const CharT *data, size_t size) {
             strcpy(small_, data);
             set_small_size(size);
@@ -120,17 +133,27 @@ namespace ss {
             bytes_[last_byte_pos] = (static_cast<uint8_t>(size) << 2) | static_cast<uint8_t>(Category::SMALL);
         }
         void init_medium(const CharT *data, size_t size) {
-            medium_.data_ = new CharT[size + 1];
+            medium_.data_ = alloc.allocate(size + 1);
             strcpy(medium_.data_, data);
             medium_.size_ = size;
             set_capacity(Category::MEDIUM, size);
         }
         void init_large(const CharT *data, size_t size) {
-            large_.data_ = new CharT[size + 1];
+            large_.data_ = alloc.allocate(size + 1);
             strcpy(large_.data_, data);
             medium_.size_ = size;
             set_capacity(Category::LARGE, size);
         }
+
+        void destroy_medium() {
+            std::destroy_n(medium_.data_, medium_.capacity_);
+            alloc.deallocate(medium_.data_, medium_.capacity_);
+        }
+        void destroy_large() {
+            std::destroy_n(large_.data_, large_.capacity_);
+            alloc.deallocate(large_.data_, large_.capacity_);
+        }
+
         void set_capacity(Category cat, uint8_t cap) {
             switch (cat) {
                 case Category::SMALL:
